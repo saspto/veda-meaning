@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Veda Meaning</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600&family=Noto+Sans+Telugu:wght@400;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <div class="logo">&#x1F549; Veda Meaning</div>
+    <p class="subtitle">Vedic scriptures in Sanskrit &amp; Telugu with word-by-word meaning</p>
+  </header>
+
+  <main>
+    <section class="search-card">
+      <div class="input-row">
+        <input
+          id="verseRef"
+          type="text"
+          placeholder="e.g. BG 2.47 · Gayatri Mantra · RV 1.1.1 · VR 1.1.1"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
+
+      <div class="script-toggle">
+        <label>
+          <input type="radio" name="script" value="devanagari" checked />
+          Sanskrit (Devanagari)
+        </label>
+        <label>
+          <input type="radio" name="script" value="telugu" />
+          Telugu Script
+        </label>
+      </div>
+
+      <div class="btn-row">
+        <button id="fetchBtn" class="btn primary">Fetch Verse / Chapter</button>
+        <button id="meaningBtn" class="btn secondary">Show Meaning</button>
+      </div>
+
+      <div class="examples">
+        <span>Try: </span>
+        <button class="chip" onclick="setRef('BG 2.47')">BG 2.47</button>
+        <button class="chip" onclick="setRef('BG 2')">BG Chapter 2</button>
+        <button class="chip" onclick="setRef('Gayatri Mantra')">Gayatri Mantra</button>
+        <button class="chip" onclick="setRef('Maha Mrityunjaya')">Maha Mrityunjaya</button>
+        <button class="chip" onclick="setRef('RV 1.1.1')">RV 1.1.1</button>
+        <button class="chip" onclick="setRef('VR 1.1.1')">VR 1.1.1</button>
+      </div>
+    </section>
+
+    <section id="verseSection" class="result-card hidden">
+      <div class="result-header">
+        <h2 id="verseTitle"></h2>
+        <span id="verseSource" class="source-badge"></span>
+      </div>
+      <div id="verseText" class="scripture-text"></div>
+    </section>
+
+    <section id="meaningSection" class="result-card hidden">
+      <div class="result-header">
+        <h2>Meaning &amp; Word Analysis</h2>
+        <span id="meaningSource" class="source-badge"></span>
+      </div>
+
+      <div id="wordTable"></div>
+
+      <div id="sentenceSection"></div>
+    </section>
+
+    <div id="spinner" class="spinner hidden">
+      <div class="dot-flashing"></div>
+      <span>Fetching from scriptures…</span>
+    </div>
+
+    <div id="errorBox" class="error-box hidden"></div>
+  </main>
+
+  <footer>
+    <p>Sources: <a href="https://vedabase.io" target="_blank">Vedabase</a> · <a href="https://gitasupersite.iitk.ac.in" target="_blank">IIT Kanpur</a> · <a href="https://www.valmikiramayan.net" target="_blank">Valmiki Ramayana</a> · <a href="https://www.sacred-texts.com" target="_blank">Sacred Texts</a> · <a href="https://www.wisdomlib.org" target="_blank">WisdomLib</a></p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

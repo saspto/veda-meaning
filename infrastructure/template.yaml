@@ -1,0 +1,217 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Veda Meaning - Vedic scripture lookup with CloudFront, S3, API GW, Lambda, Bedrock
+
+Parameters:
+  Env:
+    Type: String
+    Default: prod
+  LambdaMemoryMB:
+    Type: Number
+    Default: 512
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 30
+    MemorySize: !Ref LambdaMemoryMB
+    Environment:
+      Variables:
+        LOG_LEVEL: INFO
+
+Resources:
+
+  # ─── S3: static frontend ────────────────────────────────────────────────────
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "veda-meaning-frontend-${AWS::AccountId}-${Env}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${FrontendBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                "AWS:SourceArn": !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+
+  # ─── Lambda layer (requests, bs4, lxml) ─────────────────────────────────────
+  ScraperLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub "veda-scraper-layer-${Env}"
+      Description: requests, beautifulsoup4, lxml
+      ContentUri: ../lambda/layer/
+      CompatibleRuntimes:
+        - python3.12
+      RetentionPolicy: Delete
+
+  # ─── Lambda function ─────────────────────────────────────────────────────────
+  VedaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "veda-meaning-${Env}"
+      CodeUri: ../lambda/
+      Handler: handler.lambda_handler
+      Layers:
+        - !Ref ScraperLayer
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource:
+                - !Sub "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001"
+        - CloudWatchLogsFullAccess
+      Events:
+        VerseApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VedaApi
+            Path: /verse
+            Method: GET
+        MeaningApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VedaApi
+            Path: /meaning
+            Method: GET
+        VerseOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VedaApi
+            Path: /verse
+            Method: OPTIONS
+        MeaningOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VedaApi
+            Path: /meaning
+            Method: OPTIONS
+
+  # ─── API Gateway ─────────────────────────────────────────────────────────────
+  VedaApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub "veda-meaning-api-${Env}"
+      StageName: api
+      Cors:
+        AllowMethods: "'GET,OPTIONS'"
+        AllowHeaders: "'Content-Type'"
+        AllowOrigin: "'*'"
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+
+  # ─── CloudFront OAC ──────────────────────────────────────────────────────────
+  CloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "veda-oac-${Env}"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # ─── CloudFront Cache Policies ────────────────────────────────────────────────
+  ApiCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub "veda-api-cache-${Env}"
+        DefaultTTL: 86400
+        MaxTTL: 86400
+        MinTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          CookiesConfig:
+            CookieBehavior: none
+          HeadersConfig:
+            HeaderBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: whitelist
+            QueryStrings:
+              - ref
+              - script
+
+  # ─── CloudFront Distribution ──────────────────────────────────────────────────
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt CloudFrontOAC.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+          - Id: ApiOrigin
+            DomainName: !Sub "${VedaApi}.execute-api.${AWS::Region}.amazonaws.com"
+            CustomOriginConfig:
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols:
+                - TLSv1.2
+            OriginPath: /api
+
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # CachingOptimized (AWS managed)
+          AllowedMethods: [GET, HEAD]
+          CachedMethods:  [GET, HEAD]
+
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: ApiOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: !Ref ApiCachePolicy
+            AllowedMethods: [GET, HEAD, OPTIONS]
+            CachedMethods:  [GET, HEAD, OPTIONS]
+
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+
+Outputs:
+  CloudFrontURL:
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+    Description: Application URL
+  ApiEndpoint:
+    Value: !Sub "https://${VedaApi}.execute-api.${AWS::Region}.amazonaws.com/api"
+    Description: API Gateway endpoint
+  FrontendBucketName:
+    Value: !Ref FrontendBucket
+    Description: S3 bucket for frontend assets
+  DistributionId:
+    Value: !Ref CloudFrontDistribution
+    Description: CloudFront distribution ID
