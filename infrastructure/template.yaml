@@ -177,7 +177,6 @@ Resources:
               OriginProtocolPolicy: https-only
               OriginSSLProtocols:
                 - TLSv1.2
-            OriginPath: /api
 
         DefaultCacheBehavior:
           TargetOriginId: S3Origin

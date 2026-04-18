@@ -4,7 +4,7 @@ AWS Bedrock Claude Haiku fallback for verse retrieval and meaning generation.
 import json
 import boto3
 
-MODEL_ID = "anthropic.claude-haiku-4-5-20251001"
+MODEL_ID = "anthropic.claude-haiku-4-5-20251001-v1:0"
 REGION = "us-east-1"
 
 _client = None
