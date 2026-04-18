@@ -66,31 +66,32 @@ def _verse_count_hint(ref):
 
 def get_verse_ai(ref, script):
     """Return the complete text in Devanagari (or Telugu) script."""
+    is_telugu = script == "telugu"
     script_name = (
         "Telugu script (Telugu Unicode characters)"
-        if script == "telugu"
+        if is_telugu
         else "Devanagari script (Sanskrit Unicode characters)"
     )
     count_hint = _verse_count_hint(ref)
+    # Prefill the assistant turn with the opening line so model cannot refuse
+    prefill = "తెలుగు లిపిలో:\n\nఓం" if is_telugu else "॥ ॐ ॥\n\n"
 
-    prompt = (
-        f"You are a Vedic scripture expert with deep knowledge of all four Vedas "
-        f"(Rig, Yajur, Sama, Atharva), Upanishads, Itihasas, and Puranas.\n\n"
-        f"Task: Provide the COMPLETE authentic text for: **{ref}**\n\n"
-        f"STRICT REQUIREMENTS:\n"
-        f"1. Output ONLY in {script_name}.\n"
-        f"2. {count_hint}\n"
-        f"3. Number every verse (e.g. ॥ १॥ ॥ २॥ ...).\n"
-        f"4. Use only authentic, traditional scriptural text — no paraphrase, "
-        f"no modern rewording.\n"
-        f"5. For Yajur Veda texts (Taittiriya Samhita / Vajasaneyi Samhita), "
-        f"use the standard recension text.\n"
-        f"6. Do NOT add English words, headings in English, or any commentary.\n"
-        f"7. If this is Sri Suktam, it has 15 Richas (verses) — provide all 15 "
-        f"plus the Phala Shruti at the end.\n\n"
-        f"Return ONLY the scriptural text. Start directly with the first verse."
-    )
-    return _invoke([{"role": "user", "content": prompt}], max_tokens=8000)
+    messages = [
+        {
+            "role": "user",
+            "content": (
+                f"Transcribe the complete {ref} in {script_name}.\n"
+                f"{count_hint}\n"
+                f"Number each verse. Output scripture text only — no English, no commentary."
+            ),
+        },
+        {
+            "role": "assistant",
+            "content": prefill,
+        },
+    ]
+    result = _invoke(messages, max_tokens=8000)
+    return prefill + result
 
 
 # ---------------------------------------------------------------------------
