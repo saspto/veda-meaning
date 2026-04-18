@@ -39,12 +39,14 @@ def lambda_handler(event, context):
 
 
 def handle_verse(ref, script):
+    source = "scraped"
     try:
         text = fetch_verse(ref, script)
     except Exception:
         text = None
 
     if not text:
+        source = "AI knowledge base"
         try:
             text = get_verse_ai(ref, script)
         except Exception as e:
@@ -56,7 +58,7 @@ def handle_verse(ref, script):
         except Exception:
             pass
 
-    return response(200, {"ref": ref, "script": script, "verse": text})
+    return response(200, {"ref": ref, "script": script, "verse": text, "source": source})
 
 
 def handle_meaning(ref, script):
