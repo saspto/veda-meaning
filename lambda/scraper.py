@@ -571,18 +571,12 @@ def _scrape_sanskritdocs_kyv(text_type, book, chapter, verse):
         return None
     url = "https://sanskritdocuments.org/doc_veda/taittirIyasamhitA.html"
     html = _get(url)
-    # Extract <pre> block which holds all the text
     pre_match = re.search(r"<pre[^>]*>(.*?)</pre>", html, re.S | re.I)
     if not pre_match:
         return None
     raw = _strip_tags(pre_match.group(1))
 
-    # Try to find the section matching kanda.prapathaka.anuvaka
-    # Verse markers look like ॥ १।१।१॥  (using ।)
-    # Or like |1.1.1| in some encodings
-    # Build multiple search patterns
     k, p, a = book, chapter, verse
-    # Convert Arabic to Devanagari numerals for matching
     dev = {str(i): c for i, c in enumerate("०१२३४५६७८९")}
     k_dev = "".join(dev.get(c, c) for c in k)
     p_dev = "".join(dev.get(c, c) for c in p)
@@ -596,9 +590,13 @@ def _scrape_sanskritdocs_kyv(text_type, book, chapter, verse):
     for pat in patterns:
         m = re.search(pat, raw)
         if m:
-            # Return the surrounding ~1000 chars as context
             start = max(0, m.start() - 50)
-            end = min(len(raw), m.end() + 1000)
+            # Find the next section marker or end of document
+            next_section = re.search(
+                rf"॥\s*{k_dev}[।|\.]",
+                raw[m.end():],
+            )
+            end = m.end() + next_section.start() if next_section else len(raw)
             return raw[start:end].strip()
     return None
 
@@ -611,7 +609,6 @@ def _scrape_sanskritdocs_syv(text_type, book, chapter, verse):
     try:
         html = _get(url)
     except Exception:
-        # Fallback URL variant
         url = "https://sanskritdocuments.org/doc_veda/vs.html"
         html = _get(url)
     pre_match = re.search(r"<pre[^>]*>(.*?)</pre>", html, re.S | re.I)
@@ -621,18 +618,53 @@ def _scrape_sanskritdocs_syv(text_type, book, chapter, verse):
 
     dev = {str(i): c for i, c in enumerate("०१२३४५६७८९")}
     ch_dev = "".join(dev.get(c, c) for c in chapter)
-    v_dev  = "".join(dev.get(c, c) for c in (verse or "1"))
+    next_ch = str(int(chapter) + 1)
+    next_ch_dev = "".join(dev.get(c, c) for c in next_ch)
 
     patterns = [
-        rf"॥\s*{ch_dev}[।|\.]\s*{v_dev}\s*॥",
         rf"अध्याय\s*{ch_dev}",
+        rf"॥\s*{ch_dev}[।|\.]",
     ]
     for pat in patterns:
         m = re.search(pat, raw)
         if m:
             start = max(0, m.start() - 50)
-            end = min(len(raw), m.end() + 1000)
+            next_section = re.search(rf"अध्याय\s*{next_ch_dev}", raw[m.end():])
+            end = m.end() + next_section.start() if next_section else len(raw)
             return raw[start:end].strip()
+    return None
+
+
+def _scrape_sanskritdocs_search(query):
+    """Search sanskritdocuments.org for arbitrary Vedic/Sanskrit text."""
+    encoded = urllib.parse.quote(query)
+    url = f"https://sanskritdocuments.org/search/?q={encoded}"
+    try:
+        html = _get(url)
+    except Exception:
+        return None
+
+    # Find links to document pages in search results
+    links = re.findall(r'href="(/doc[^"]+\.html?)"', html, re.I)
+    links = list(dict.fromkeys(links))  # deduplicate preserving order
+
+    for link in links[:3]:
+        doc_url = "https://sanskritdocuments.org" + link
+        try:
+            doc_html = _get(doc_url)
+        except Exception:
+            continue
+        # Prefer <pre> blocks (plain Sanskrit text)
+        pre_match = re.search(r"<pre[^>]*>(.*?)</pre>", doc_html, re.S | re.I)
+        if pre_match:
+            text = _strip_tags(pre_match.group(1)).strip()
+            if len(text) > 200:
+                return text
+        # Fall back to main content div
+        for div_class in ["SanskritText", "devanagari", "content", "main"]:
+            text = _extract(doc_html, "div", **{"class": div_class})
+            if text and len(text) > 200:
+                return text
     return None
 
 
@@ -643,8 +675,17 @@ def fetch_verse(ref, script):
         return KNOWN_MANTRAS.get(book)
 
     if text_type == "HYMN":
-        # Return embedded text if we have it; else fall through to Bedrock
-        return KNOWN_HYMNS.get(book)
+        cached = KNOWN_HYMNS.get(book)
+        if cached:
+            return cached
+        # Not in local cache — search the web
+        try:
+            result = _scrape_sanskritdocs_search(ref)
+            if result:
+                return result
+        except Exception:
+            pass
+        return None  # let handler fall through to Bedrock
 
     scrapers = [
         _scrape_vedabase_verse,
@@ -660,6 +701,14 @@ def fetch_verse(ref, script):
                 return result
         except Exception:
             continue
+
+    # Last resort: web search on sanskritdocuments.org
+    try:
+        result = _scrape_sanskritdocs_search(ref)
+        if result:
+            return result
+    except Exception:
+        pass
     return None
 
 
