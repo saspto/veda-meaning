@@ -1,5 +1,5 @@
 /* global API_BASE_URL */
-const API_BASE = (typeof API_BASE_URL !== "undefined") ? API_BASE_URL : "/api";
+const API_BASE = "https://d1j17houw6gbvj.cloudfront.net/api";
 
 const verseRefInput  = document.getElementById("verseRef");
 const fetchBtn       = document.getElementById("fetchBtn");
